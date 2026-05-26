@@ -1,0 +1,22 @@
+# Virtual environment
+venv/
+
+# Data files (too large for Git)
+data/raw/
+data/processed/
+data/analytics/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# IDE files
+.vscode/
+.idea/
+
+# Spark logs
+derby.log
+metastore_db/
+spark-warehouse/
