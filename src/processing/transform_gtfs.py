@@ -23,7 +23,8 @@ def create_spark_session():
 def stops_per_route(spark):
     """
     Calculate how many unique stops each route serves.
-    Maps route_type codes to human-readable names.
+    Filters out special routes (X, Sk) and night routes (N).
+    Classifies remaining routes as day/night.
     """
     print("=" * 50)
     print("Stops per route")
@@ -42,22 +43,44 @@ def stops_per_route(spark):
          .otherwise("other")
     )
 
+    # Night bus numbers without N prefix (from imhd.sk)
+    night_bus_numbers = ["299", "598", "599", "699", "798", "799"]
+
+    # Filter out special and diversion routes
+    real_routes = routes_named.filter(
+        ~F.col("route_short_name").startswith("X") &
+        ~F.col("route_short_name").startswith("Šk")
+    ).withColumn(
+        "service_type",
+        F.when(
+            F.col("route_short_name").startswith("N") |
+            F.col("route_short_name").isin(night_bus_numbers),
+            "night"
+        ).otherwise("day")
+    )
+
+    # Remove duplicates
+    real_routes = real_routes.dropDuplicates(["route_short_name", "transport_type"])
+
+    print("\nRoutes by type and service:")
+    real_routes.groupBy("transport_type", "service_type").count().orderBy("transport_type", "service_type").show()
+
     # Join trips with stop_times
     trips_stops = trips.join(stop_times, on="trip_id")
 
     # Join with routes
-    full = trips_stops.join(routes_named, on="route_id")
+    full = trips_stops.join(real_routes, on="route_id")
 
     # Count unique stops per route
     result = (
         full
-        .groupBy("route_id", "route_short_name", "transport_type")
+        .groupBy("route_id", "route_short_name", "transport_type", "service_type")
         .agg(F.countDistinct("stop_id").alias("unique_stops"))
         .orderBy(F.desc("unique_stops"))
     )
 
     print("\nTop 10 routes by number of unique stops:")
-    result.show(10, truncate=False)
+    result.select("route_short_name", "transport_type", "service_type", "unique_stops").show(10, truncate=False)
 
     result.write.mode("overwrite").parquet("data/analytics/stops_per_route")
     print("Saved to data/analytics/stops_per_route\n")
@@ -108,6 +131,7 @@ def trips_per_hour(spark):
     print("Saved to data/analytics/trips_per_hour\n")
 
     return result
+
 
 def main():
     spark = create_spark_session()
